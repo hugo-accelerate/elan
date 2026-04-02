@@ -353,6 +353,74 @@ Verdict:
 
 LangGraph can represent the map-reduce and routing parts directly, but the syntax is state-and-edge centric. The workflow reads like a programmable graph runtime rather than a task workflow DSL. It is expressive, but more mechanical than the baseline Elan form.
 
+## Temporal
+
+Closest idiom:
+
+- workflow and activity definitions
+- fan-out with concurrent activity execution
+- conditional control flow in workflow code
+- child workflows if composition is needed later
+
+```python
+import asyncio
+from datetime import timedelta
+
+from temporalio import workflow
+
+
+@workflow.defn
+class BaselineWorkflow:
+    @workflow.run
+    async def run(self) -> int:
+        items = await workflow.execute_activity(
+            load_items,
+            start_to_close_timeout=timedelta(seconds=30),
+        )
+
+        processed = await asyncio.gather(
+            *[
+                workflow.execute_activity(
+                    process_each,
+                    item,
+                    start_to_close_timeout=timedelta(seconds=30),
+                )
+                for item in items
+            ]
+        )
+
+        total = await workflow.execute_activity(
+            collect_results,
+            processed,
+            start_to_close_timeout=timedelta(seconds=30),
+        )
+
+        should_notify = await workflow.execute_activity(
+            decide,
+            total,
+            start_to_close_timeout=timedelta(seconds=30),
+        )
+
+        if should_notify:
+            await workflow.execute_activity(
+                notify,
+                total,
+                start_to_close_timeout=timedelta(seconds=30),
+            )
+
+        stored = await workflow.execute_activity(
+            store,
+            total,
+            start_to_close_timeout=timedelta(seconds=30),
+        )
+
+        return stored
+```
+
+Verdict:
+
+Temporal can express the baseline cleanly as workflow code, and the flow is readable if you already think in terms of workflow methods and activities. The tradeoff is that the orchestration is imperative and durability-centric rather than graph-centric. This makes Temporal strong for long-running reliable execution, but it is not aiming for the same explicit graph vocabulary as Elan.
+
 ## Elan
 
 Closest idiom:
@@ -439,6 +507,8 @@ Airflow, Dagster, and Metaflow express the fan-out and reduce parts clearly, but
 
 Prefect is compact because it treats most orchestration as plain Python control flow. That keeps the code small, but the graph structure is less explicit.
 
+Temporal is also compact at the syntax level, but for a different reason: the orchestration is durable workflow code rather than an explicit graph DSL. That makes it a strong comparator for reliability-oriented control flow, but not for graph-native routing.
+
 LangGraph can model the full pattern, but it reads as a low-level graph runtime with shared state and edge functions rather than a task workflow DSL.
 
 Elan keeps the task and routing vocabulary cleaner than the other tools:
@@ -464,5 +534,8 @@ The main features still left to pressure-test in later comparisons are:
 - Prefect tasks: https://docs.prefect.io/v3/concepts/tasks
 - Dagster dynamic graphs: https://legacy-versioned-docs.dagster.dagster-docs.io/concepts/ops-jobs-graphs/dynamic-graphs
 - Metaflow basics: https://docs.metaflow.org/metaflow/basics
+- Temporal developer guide: https://docs.temporal.io/develop
+- Temporal Python SDK guide: https://docs.temporal.io/develop/python
+- Temporal child workflows: https://docs.temporal.io/develop/python/child-workflows
 - LangGraph graph API: https://docs.langchain.com/oss/python/langgraph/graph-api
 - LangGraph Send example: https://docs.langchain.com/oss/python/langgraph/use-graph-api
